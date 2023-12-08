@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"crypto/md5"
 	"flag"
@@ -74,26 +72,17 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 			slog.Info("Skipping doc", "path", path)
 			return nil
 		}
-		chunks, err := chunkFile(ctx, content)
-		if err != nil {
-			return fmt.Errorf("failed to chunk file: %w", err)
-		}
-		embeddings, err := llm.CreateEmbedding(ctx, chunks)
+		embeddings, err := llm.CreateEmbedding(ctx, []string{string(content)})
 		if err != nil {
 			return fmt.Errorf("failed to create embeddings: %w", err)
 		}
-		if len(embeddings) != len(chunks) {
-			return fmt.Errorf("mismatched number of embeddings and chunks")
-		}
-		for i, chunk := range chunks {
-			chunkHash := md5.Sum([]byte(chunk))
-			if err := db.CreateDoc(ctx, postgres.CreateDocParams{
-				Content:    chunk,
-				ContentMd5: chunkHash[:],
-				Embedding:  pgvector.NewVector(embeddings[i]),
-			}); err != nil {
-				return fmt.Errorf("failed to create doc: %w", err)
-			}
+		contentHash := md5.Sum([]byte(content))
+		if err := db.CreateDocs(ctx, postgres.CreateDocsParams{
+			Content:    content,
+			ContentMd5: contentHash[:],
+			Embedding:  pgvector.NewVector(embeddings[0]),
+		}); err != nil {
+			return fmt.Errorf("failed to create doc: %w", err)
 		}
 		slog.Info("Created doc", "path", path)
 		return nil
@@ -102,30 +91,4 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 	}
 	slog.Info("Population complete!")
 	return nil
-}
-
-func chunkFile(ctx context.Context, content []byte) ([]string, error) {
-	scanner := bufio.NewScanner(bytes.NewReader(content))
-	scanner.Split(splitByParagraph)
-
-	var chunks []string
-	for scanner.Scan() {
-		chunks = append(chunks, scanner.Text())
-	}
-
-	return chunks, nil
-}
-
-// splitByParagraph is a custom split function for bufio.Scanner to split by
-// paragraphs (text pieces separated by two newlines).
-func splitByParagraph(data []byte, atEOF bool) (advance int, token []byte, err error) {
-	if i := bytes.Index(data, []byte("\n\n")); i >= 0 {
-		return i + 2, bytes.TrimSpace(data[:i]), nil
-	}
-
-	if atEOF && len(data) != 0 {
-		return len(data), bytes.TrimSpace(data), nil
-	}
-
-	return 0, nil, nil
 }

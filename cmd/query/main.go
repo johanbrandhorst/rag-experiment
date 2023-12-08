@@ -55,20 +55,19 @@ func run(ctx context.Context, databaseUrl string, query string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create embedding: %w", err)
 	}
-	docs, err := db.FindTop3DocsByEmbedding(ctx, pgvector.NewVector(embeddings[0]))
+	docs, err := db.FindTop5DocssByEmbedding(ctx, pgvector.NewVector(embeddings[0]))
 	if err != nil {
-		return fmt.Errorf("failed to find top 3 docs: %w", err)
+		return fmt.Errorf("failed to find top 5 docs: %w", err)
 	}
 	var contextInfo string
 	for _, doc := range docs {
 		contextInfo += string(doc) + "\n"
 	}
-	fmt.Println(contextInfo)
 	llmQuery := fmt.Sprintf(`Use the below information to answer the subsequent question, as it relates to the HashiCorp Boundary product. Give examples and be as helpful as possible.
 Information:
 %s
 
-Question: %v`, contextInfo, query)
+Question: %s`, contextInfo, query)
 	_, err = llm.Call(ctx, llmQuery,
 		llms.WithStreamingFunc(func(ctx context.Context, chunk []byte) error {
 			fmt.Print(string(chunk))

@@ -11,34 +11,34 @@ import (
 	"github.com/pgvector/pgvector-go"
 )
 
-const createDoc = `-- name: CreateDoc :exec
+const createDocs = `-- name: CreateDocs :exec
 INSERT INTO docs (content, content_md5, embedding) VALUES ($1, $2, $3)
 `
 
-type CreateDocParams struct {
-	Content    string
+type CreateDocsParams struct {
+	Content    []byte
 	ContentMd5 []byte
 	Embedding  pgvector.Vector
 }
 
-func (q *Queries) CreateDoc(ctx context.Context, arg CreateDocParams) error {
-	_, err := q.db.Exec(ctx, createDoc, arg.Content, arg.ContentMd5, arg.Embedding)
+func (q *Queries) CreateDocs(ctx context.Context, arg CreateDocsParams) error {
+	_, err := q.db.Exec(ctx, createDocs, arg.Content, arg.ContentMd5, arg.Embedding)
 	return err
 }
 
-const findTop3DocsByEmbedding = `-- name: FindTop3DocsByEmbedding :many
-SELECT content FROM docs ORDER BY (1 - (embedding <=> $1::vector)) LIMIT 3
+const findTop5DocssByEmbedding = `-- name: FindTop5DocssByEmbedding :many
+SELECT content FROM docs where length(content) > 500 ORDER BY (1 - (embedding <=> $1::vector)) LIMIT 5
 `
 
-func (q *Queries) FindTop3DocsByEmbedding(ctx context.Context, dollar_1 pgvector.Vector) ([]string, error) {
-	rows, err := q.db.Query(ctx, findTop3DocsByEmbedding, dollar_1)
+func (q *Queries) FindTop5DocssByEmbedding(ctx context.Context, dollar_1 pgvector.Vector) ([][]byte, error) {
+	rows, err := q.db.Query(ctx, findTop5DocssByEmbedding, dollar_1)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []string
+	var items [][]byte
 	for rows.Next() {
-		var content string
+		var content []byte
 		if err := rows.Scan(&content); err != nil {
 			return nil, err
 		}

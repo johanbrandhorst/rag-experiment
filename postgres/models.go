@@ -11,7 +11,7 @@ import (
 
 type Doc struct {
 	ID         pgtype.UUID
-	Content    string
+	Content    []byte
 	ContentMd5 []byte
 	Embedding  pgvector.Vector
 }
