@@ -11,9 +11,10 @@ import (
 	"os/signal"
 	"path/filepath"
 
+	"github.com/google/generative-ai-go/genai"
 	"github.com/johanbrandhorst/rag-experiment/postgres"
 	"github.com/pgvector/pgvector-go"
-	"github.com/tmc/langchaingo/llms/ollama"
+	"google.golang.org/api/option"
 )
 
 var (
@@ -40,6 +41,11 @@ func main() {
 	}
 }
 
+type doc struct {
+	path    string
+	content []byte
+}
+
 func run(ctx context.Context, databaseUrl string, docsPath string) error {
 	if docsPath == "" {
 		return fmt.Errorf("docs-path must be set")
@@ -49,10 +55,14 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create store: %w", err)
 	}
-	llm, err := ollama.New(ollama.WithModel("mistral"))
+	client, err := genai.NewClient(ctx, option.WithAPIKey(os.Getenv("API_KEY")))
 	if err != nil {
-		return fmt.Errorf("failed to create LLM: %w", err)
+		log.Fatal(err)
 	}
+	defer client.Close()
+	model := client.EmbeddingModel("models/text-embedding-004")
+	model.TaskType = genai.TaskTypeRetrievalDocument
+	var docs []doc
 	if err := fs.WalkDir(os.DirFS(docsPath), ".", func(path string, d fs.DirEntry, err error) error {
 		if d.IsDir() {
 			return nil
@@ -71,21 +81,40 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 			slog.Info("Skipping doc", "path", path)
 			return nil
 		}
-		embeddings, err := llm.CreateEmbedding(ctx, []string{string(content)})
-		if err != nil {
-			return fmt.Errorf("failed to create embeddings: %w", err)
-		}
-		if err := db.CreateDocs(ctx, postgres.CreateDocsParams{
-			Path:      path,
-			Content:   content,
-			Embedding: pgvector.NewVector(embeddings[0]),
-		}); err != nil {
-			return fmt.Errorf("failed to create doc: %w", err)
-		}
-		slog.Info("Created doc", "path", path)
+		docs = append(docs, doc{path: path, content: content})
+		slog.Info("Read doc", "path", path)
 		return nil
 	}); err != nil {
 		return fmt.Errorf("failed to walk docs: %w", err)
+	}
+	batch := model.NewBatch()
+	for i, doc := range docs {
+		batch = batch.AddContent(genai.Text(string(doc.content)))
+		if (i > 0 && (i+1)%100 == 0) || i == len(docs)-1 {
+			embeddings, err := model.BatchEmbedContents(ctx, batch)
+			if err != nil {
+				return fmt.Errorf("failed to create embeddings: %w", err)
+			}
+			for j, embedding := range embeddings.Embeddings {
+				var k int
+				if i == len(docs)-1 {
+					k = len(docs) - 1 - i%100 + j
+				} else {
+					k = i - 99 + j
+				}
+				doc := docs[k]
+				if err := db.CreateDocs(ctx, postgres.CreateDocsParams{
+					Path:      doc.path,
+					Content:   doc.content,
+					Embedding: pgvector.NewVector(embedding.Values),
+				}); err != nil {
+					return fmt.Errorf("failed to create doc: %w", err)
+				}
+				slog.Info("Created doc in DB", "path", doc.path)
+			}
+			slog.Info("Created docs in DB", "count", i+1)
+			batch = model.NewBatch()
+		}
 	}
 	slog.Info("Population complete!")
 	return nil
