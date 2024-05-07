@@ -55,13 +55,14 @@ func run(ctx context.Context, databaseUrl string, query string) error {
 	if err != nil {
 		return fmt.Errorf("failed to create embedding: %w", err)
 	}
-	docs, err := db.FindTop5DocssByEmbedding(ctx, pgvector.NewVector(embeddings[0]))
+	docs, err := db.FindTopDocsByEmbedding(ctx, pgvector.NewVector(embeddings[0]))
 	if err != nil {
 		return fmt.Errorf("failed to find top 5 docs: %w", err)
 	}
 	var contextInfo string
 	for _, doc := range docs {
-		contextInfo += string(doc) + "\n"
+		fmt.Println("Retrieved", doc.Path)
+		contextInfo += string(doc.Content) + "\n"
 	}
 	llmQuery := fmt.Sprintf(`Use the below information to answer the subsequent question, as it relates to the HashiCorp Boundary product. Give examples and be as helpful as possible.
 Information:

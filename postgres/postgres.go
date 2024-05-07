@@ -2,7 +2,6 @@ package postgres
 
 import (
 	"context"
-	"crypto/md5"
 	"embed"
 	"fmt"
 
@@ -71,9 +70,4 @@ func ensureMigrations(ctx context.Context, conf pgx.ConnConfig) (retErr error) {
 
 func (s *Store) Close(ctx context.Context) error {
 	return s.conn.Close(ctx)
-}
-
-func (s *Store) HasDoc(ctx context.Context, content []byte) (bool, error) {
-	hash := md5.Sum(content)
-	return s.Queries.HasDoc(ctx, hash[:])
 }

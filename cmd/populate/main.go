@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"crypto/md5"
 	"flag"
 	"fmt"
 	"io/fs"
@@ -65,7 +64,7 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to read file %q: %w", path, err)
 		}
-		if ok, err := db.HasDoc(ctx, content); err != nil {
+		if ok, err := db.HasDoc(ctx, path); err != nil {
 			return fmt.Errorf("failed to check if doc exists: %w", err)
 		} else if ok {
 			// Skip creating embedding if it already exists
@@ -76,11 +75,10 @@ func run(ctx context.Context, databaseUrl string, docsPath string) error {
 		if err != nil {
 			return fmt.Errorf("failed to create embeddings: %w", err)
 		}
-		contentHash := md5.Sum([]byte(content))
 		if err := db.CreateDocs(ctx, postgres.CreateDocsParams{
-			Content:    content,
-			ContentMd5: contentHash[:],
-			Embedding:  pgvector.NewVector(embeddings[0]),
+			Path:      path,
+			Content:   content,
+			Embedding: pgvector.NewVector(embeddings[0]),
 		}); err != nil {
 			return fmt.Errorf("failed to create doc: %w", err)
 		}
